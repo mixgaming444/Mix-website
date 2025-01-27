@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fan-Made Minecraft</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      font-family: Arial, sans-serif;
+    }
+    #instructions {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 10px;
+      border-radius: 5px;
+      z-index: 100;
+    }
+    #save-load-buttons {
+      position: absolute;
+      top: 100px;
+      left: 10px;
+      z-index: 100;
+    }
+    button {
+      margin: 5px;
+      padding: 10px;
+      border: none;
+      background-color: #333;
+      color: white;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #555;
+    }
+  </style>
+</head>
+<body>
+  <div id="instructions">
+    <h3>Fan-Made Minecraft</h3>
+    <p>Controls:</p>
+    <ul>
+      <li>Left Click: Add Block</li>
+      <li>Right Click: Remove Block</li>
+      <li>W/A/S/D: Move</li>
+      <li>Drag Mouse: Rotate Camera</li>
+    </ul>
+  </div>
+  <div id="save-load-buttons">
+    <button id="save-world">Save World</button>
+    <button id="load-world">Load World</button>
+  </div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    // Scene setup
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Textures
+    const textureLoader = new THREE.TextureLoader();
+    const grassTexture = textureLoader.load('https://i.imgur.com/TK0Cp3R.png');
+    const stoneTexture = textureLoader.load('https://i.imgur.com/8jZs0uO.png');
+    const blockMaterial = new THREE.MeshBasicMaterial({ map: grassTexture });
+    const blockMaterialStone = new THREE.MeshBasicMaterial({ map: stoneTexture });
+
+    // Block and grid
+    const blockSize = 1;
+    const blockGeometry = new THREE.BoxGeometry(blockSize, blockSize, blockSize);
+    const blocks = [];
+    const worldData = [];
+
+    // Ground
+    const planeGeometry = new THREE.PlaneGeometry(50, 50);
+    const planeMaterial = new THREE.MeshLambertMaterial({ map: grassTexture });
+    const plane = new THREE.Mesh(planeGeometry, planeMaterial);
+    plane.rotation.x = -Math.PI / 2;
+    plane.position.y = -0.5;
+    scene.add(plane);
+
+    // Lighting
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(10, 10, 10);
+    scene.add(light);
+
+    const ambientLight = new THREE.AmbientLight(0x404040);
+    scene.add(ambientLight);
+
+    // Camera controls
+    let isDragging = false;
+    let previousMousePosition = { x: 0, y: 0 };
+
+    document.addEventListener('mousedown', () => (isDragging = true));
+    document.addEventListener('mouseup', () => (isDragging = false));
+    document.addEventListener('mousemove', (event) => {
+      if (isDragging) {
+        const deltaMove = {
+          x: event.offsetX - previousMousePosition.x,
+          y: event.offsetY - previousMousePosition.y,
+        };
+        camera.rotation.y -= deltaMove.x * 0.005;
+        camera.rotation.x -= deltaMove.y * 0.005;
+      }
+      previousMousePosition = {
+        x: event.offsetX,
+        y: event.offsetY,
+      };
+    });
+
+    // Player movement
+    const keys = { w: false, a: false, s: false, d: false };
+    document.addEventListener('keydown', (e) => (keys[e.key.toLowerCase()] = true));
+    document.addEventListener('keyup', (e) => (keys[e.key.toLowerCase()] = false));
+
+    function movePlayer() {
+      const speed = 0.1;
+      if (keys.w) camera.position.z -= Math.cos(camera.rotation.y) * speed;
+      if (keys.s) camera.position.z += Math.cos(camera.rotation.y) * speed;
+      if (keys.a) camera.position.x -= Math.sin(camera.rotation.y) * speed;
+      if (keys.d) camera.position.x += Math.sin(camera.rotation.y) * speed;
+    }
+
+    // Raycaster for placing/removing blocks
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    window.addEventListener('mousedown', (event) => {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+
+      const intersects = raycaster.intersectObjects([...blocks, plane]);
+      if (intersects.length > 0) {
+        const intersect = intersects[0];
+        const position = intersect.point.clone().floor().addScalar(0.5);
+
+        if (event.button === 0) {
+          // Add block
+          const newBlock = new THREE.Mesh(blockGeometry, blockMaterial);
+          newBlock.position.copy(position);
+          scene.add(newBlock);
+          blocks.push(newBlock);
+          worldData.push({ x: position.x, y: position.y, z: position.z, type: 'grass' });
+        } else if (event.button === 2) {
+          // Remove block
+          if (intersect.object !== plane) {
+            scene.remove(intersect.object);
+            const index = blocks.indexOf(intersect.object);
+            if (index > -1) blocks.splice(index, 1);
+          }
+        }
+      }
+    });
+
+    // Save and load world
+    document.getElementById('save-world').addEventListener('click', () => {
+      localStorage.setItem('minecraftWorld', JSON.stringify(worldData));
+      alert('World saved!');
+    });
+
+    document.getElementById('load-world').addEventListener('click', () => {
+      const savedWorld = JSON.parse(localStorage.getItem('minecraftWorld')) || [];
+      savedWorld.forEach((block) => {
+        const material = block.type === 'grass' ? blockMaterial : blockMaterialStone;
+        const newBlock = new THREE.Mesh(blockGeometry, material);
+        newBlock.position.set(block.x, block.y, block.z);
+        scene.add(newBlock);
+        blocks.push(newBlock);
+      });
+      alert('World loaded!');
+    });
+
+    // Animation loop
+    function animate() {
+      requestAnimationFrame(animate);
+      movePlayer();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+  </script>
+</body>
+</html>
